@@ -7,7 +7,7 @@
 -- contractor_id is the logical primary key every other table joins against.
 -- ============================================================================
 
-CREATE TABLE IF NOT EXISTS `project-e98a17cc-b3c1-4852-95f.northwind_digital_jobs.contractors_master` (
+CREATE TABLE IF NOT EXISTS `YOUR_PROJECT_ID.northwind_digital_jobs.contractors_master` (
   contractor_id        STRING  NOT NULL OPTIONS (description = 'Logical primary key, e.g. CONT_HVAC_01'),
   contractor_name      STRING           OPTIONS (description = 'Company name'),
   service_category     STRING           OPTIONS (description = 'HVAC | Plumbing | Electrician | Roofing'),

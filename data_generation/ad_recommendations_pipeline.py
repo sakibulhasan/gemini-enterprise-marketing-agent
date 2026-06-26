@@ -12,9 +12,12 @@ the POC these are mock "BUDGET_RAISE" suggestions with projected impact metrics.
 They land in GCS (not BigQuery) because they represent semi-structured,
 document-style output that downstream systems / Gemini Enterprise can read.
 
-GCS layout (Hive-style partitioning by year/month)
---------------------------------------------------
-    gs://[BUCKET]/ad_recommendations/year=2026/month=07/rec_[CONTRACTOR_ID].json
+One recommendation per contractor is generated for the CURRENT month and the
+NEXT month, computed relative to the date the script runs.
+
+GCS layout (Hive-style partitioning by year/month, derived from the target month)
+--------------------------------------------------------------------------------
+    gs://[BUCKET]/ad_recommendations/year=YYYY/month=MM/rec_[CONTRACTOR_ID].json
 
 JSON document shape
 -------------------
@@ -39,8 +42,10 @@ JSON document shape
 
 import json
 import random
+from datetime import date
 
 import pandas as pd
+from dateutil.relativedelta import relativedelta
 
 import config
 import gcp_utils
@@ -48,16 +53,27 @@ import gcp_utils
 logger = config.get_logger(__name__)
 
 
-def build_recommendation(contractor_id: str, service_category: str) -> dict:
-    """Build a single recommendation document for one contractor.
+def _target_months() -> list[str]:
+    """Return the current and next month (YYYY-MM) relative to the run date."""
+    first_of_month = date.today().replace(day=1)
+    return [
+        (first_of_month + relativedelta(months=i)).strftime("%Y-%m")
+        for i in range(2)
+    ]
+
+
+def build_recommendation(
+    contractor_id: str, service_category: str, target_month: str
+) -> dict:
+    """Build a single recommendation document for one contractor and month.
 
     The numeric fields are randomised within realistic ranges so the dataset
     looks plausible while remaining obviously synthetic.
     """
     return {
-        "recommendation_id": f"rec_{config.TARGET_MONTH.replace('-', '')}_{contractor_id}",
+        "recommendation_id": f"rec_{target_month.replace('-', '')}_{contractor_id}",
         "generated_timestamp": config.GENERATION_TIMESTAMP,
-        "target_month": config.TARGET_MONTH,
+        "target_month": target_month,
         "service_category": service_category,
         "contractor_id": contractor_id,
         "recommendation_type": "BUDGET_RAISE",
@@ -74,8 +90,8 @@ def build_recommendation(contractor_id: str, service_category: str) -> dict:
 
 
 def run(contractors_df: pd.DataFrame | None = None) -> None:
-    """Generate one recommendation per contractor and upload each as a JSON
-    object to GCS.
+    """Generate one recommendation per contractor for the current and next month
+    and upload each as a JSON object to GCS.
 
     If ``contractors_df`` is not supplied (standalone execution), the contractor
     roster is read back from BigQuery.
@@ -93,19 +109,25 @@ def run(contractors_df: pd.DataFrame | None = None) -> None:
             config.GCS_BUCKET_NAME,
         )
 
+    target_months = _target_months()
     for _, c in contractors_df.iterrows():
         cont_id = c["contractor_id"]
         category = c["service_category"]
 
-        payload = build_recommendation(cont_id, category)
-        blob_path = f"ad_recommendations/year=2026/month=07/rec_{cont_id}.json"
+        for target_month in target_months:
+            payload = build_recommendation(cont_id, category, target_month)
+            # Hive-style partition path derived from the target month (YYYY-MM).
+            year, month = target_month.split("-")
+            blob_path = (
+                f"ad_recommendations/year={year}/month={month}/rec_{cont_id}.json"
+            )
 
-        logger.info("Uploading JSON for %s...", cont_id)
-        bucket.blob(blob_path).upload_from_string(
-            data=json.dumps(payload, indent=2),
-            content_type="application/json",
-        )
-        logger.info("  -> gs://%s/%s", config.GCS_BUCKET_NAME, blob_path)
+            logger.info("Uploading JSON for %s (%s)...", cont_id, target_month)
+            bucket.blob(blob_path).upload_from_string(
+                data=json.dumps(payload, indent=2),
+                content_type="application/json",
+            )
+            logger.info("  -> gs://%s/%s", config.GCS_BUCKET_NAME, blob_path)
 
 
 if __name__ == "__main__":

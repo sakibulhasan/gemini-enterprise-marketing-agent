@@ -109,6 +109,7 @@ otherwise                                             -> REVIEW
 │   ├── weather_pipeline.py           # -> weather_demand_factors
 │   ├── ad_recommendations_pipeline.py# -> GCS JSON recommendations
 │   ├── run_pipeline.py               # orchestrator (runs all four)
+│   ├── tests/                        # pytest unit tests for the generators
 │   └── requirements.txt
 │
 └── readme.md
@@ -141,7 +142,10 @@ gcloud auth login
 # application-default credentials used by the Python client libraries
 gcloud auth application-default login
 
-gcloud config set project project-e98a17cc-b3c1-4852-95f
+# Point gcloud at YOUR project. List the projects your account can access:
+gcloud projects list
+# then set the one you want to use (replace with your own project id):
+gcloud config set project YOUR_PROJECT_ID
 ```
 
 ### 4.3 Configure the project values
@@ -157,8 +161,9 @@ Create the **dataset, the three tables, and the bucket BEFORE** running any
 pipeline. Use the helper script (recommended):
 
 ```bash
-export PROJECT_ID="project-e98a17cc-b3c1-4852-95f"
-export GCS_BUCKET_NAME="northwind-digital-adsense"
+# Use YOUR project id and a bucket name you create/choose (must be globally unique).
+export PROJECT_ID="YOUR_PROJECT_ID"
+export GCS_BUCKET_NAME="YOUR_BUCKET_NAME"
 ./bigquery/setup_infra.sh
 ```
 
@@ -172,11 +177,10 @@ project id), and creates the bucket if it does not already exist.
 # 1. Enable APIs
 gcloud services enable bigquery.googleapis.com storage.googleapis.com
 
-# 2. Create the dataset + tables (the project id is already set in the .sql files)
-bq query --use_legacy_sql=false < bigquery/00_create_dataset.sql
-bq query --use_legacy_sql=false < bigquery/01_contractors_master.sql
-bq query --use_legacy_sql=false < bigquery/02_job_ledger.sql
-bq query --use_legacy_sql=false < bigquery/03_weather_demand_factors.sql
+# 2. Create the dataset + tables (substitute your project id into the DDL)
+for f in bigquery/0*.sql; do
+  sed "s/YOUR_PROJECT_ID/$PROJECT_ID/g" "$f" | bq query --use_legacy_sql=false
+done
 
 # 3. Create the bucket
 gsutil mb -l US gs://$GCS_BUCKET_NAME
@@ -214,23 +218,26 @@ python ad_recommendations_pipeline.py
 | Table | Description | Rows |
 |-------|-------------|------|
 | `contractors_master` | Contractor catalog with capacity (`num_technicians * jobs_per_tech_month`). | 12 |
-| `job_ledger` | Historical `COMPLETED` jobs (2024-06 → 2026-06) **plus** future `SCHEDULED` jobs for 2026-07. | thousands |
-| `weather_demand_factors` | Per-category demand multipliers for the 2026-07 `SEVERE_STORMS` forecast. | 1 |
+| `job_ledger` | Historical `COMPLETED` jobs (rolling **last 2 years**) **plus** future `SCHEDULED` jobs for the **next 3 months** (relative to the run date). | thousands |
+| `weather_demand_factors` | Per-category demand multipliers for the `SEVERE_STORMS` forecast, one row per forecast month (current month + next 2). | 3 |
 
-- **Capacity signal:** for 2026-07, some contractors are intentionally **heavily
-  booked (~90% capacity)** and others **lightly booked (~30% capacity)** — so the
+- **Capacity signal:** for each upcoming month, some contractors are intentionally
+  **heavily booked (~90% capacity)** and others **lightly booked (~30% capacity)** — so the
   agent has clear winners and losers to reason about.
-- **Demand signal:** the 2026-07 storm forecast boosts Roofing (1.8×), Plumbing
+- **Demand signal:** the storm forecast boosts Roofing (1.8×), Plumbing
   (1.5×), Electrician (1.3×); HVAC stays neutral (1.0×).
 
 **GCS — Ad Recommendations (JSON)**
-- Path: `gs://[BUCKET]/ad_recommendations/year=2026/month=07/rec_[CONTRACTOR_ID].json`
-- One `BUDGET_RAISE` document per contractor with projected impact and a
+- One `BUDGET_RAISE` document per contractor for the **current month and the next
+  month** (relative to the run date), each with projected impact and a
   `PENDING_REVIEW` status — the recommendation the analyst must accept or reject.
+- Path (Hive-partitioned, derived from each recommendation's target month):
+  `gs://[BUCKET]/ad_recommendations/year=[YYYY]/month=[MM]/rec_[CONTRACTOR_ID].json`
 
 ### 4.7 Verify
 ```bash
-# July booking load vs capacity (the core utilization signal)
+# Next-month booking load vs capacity (the core utilization signal).
+# Replace 2026-07 with the month you want to inspect.
 bq query --use_legacy_sql=false "
 SELECT j.contractor_id, c.max_monthly_capacity,
        COUNT(*) AS scheduled_jobs,
@@ -240,10 +247,29 @@ JOIN \`project-e98a17cc-b3c1-4852-95f.northwind_digital_jobs.contractors_master\
 WHERE j.target_completion_month = '2026-07' AND j.job_status = 'SCHEDULED'
 GROUP BY 1, 2 ORDER BY utilization DESC"
 
-# JSON recommendations in GCS
-gsutil ls gs://northwind-digital-adsense/ad_recommendations/year=2026/month=07/
+# JSON recommendations in GCS (year/month are derived from the target month)
+gsutil ls -r gs://northwind-digital-adsense/ad_recommendations/
 gsutil cat gs://northwind-digital-adsense/ad_recommendations/year=2026/month=07/rec_CONT_HVAC_01.json
 ```
+
+### 4.8 Run the tests
+The data-generation logic ships with offline unit tests (no GCP credentials
+needed — they exercise the pure `generate()` / `build_recommendation()` functions).
+Run them from inside `data_generation/` with the same virtualenv from step 4.5
+activated:
+```bash
+cd data_generation
+source .venv/bin/activate                 # if not already active
+pip install -r requirements.txt           # ensures pytest is installed
+python -m pytest -q
+```
+> If you see `No module named pytest`, your virtualenv predates pytest being
+> added to `requirements.txt` — just re-run `pip install -r requirements.txt`.
+
+The suite verifies the contractor roster (12 rows, capacity math), the job
+ledger (historical 2-year window + future 3-month schedule, unique ids, booking
+dates before their target month), the weather forecast months/multipliers, and
+the ad-recommendation target months and document shape.
 
 ---
 

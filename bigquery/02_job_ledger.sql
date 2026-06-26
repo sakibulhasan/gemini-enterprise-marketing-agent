@@ -9,7 +9,7 @@
 -- utilization queries.
 -- ============================================================================
 
-CREATE TABLE IF NOT EXISTS `project-e98a17cc-b3c1-4852-95f.northwind_digital_jobs.job_ledger` (
+CREATE TABLE IF NOT EXISTS `YOUR_PROJECT_ID.northwind_digital_jobs.job_ledger` (
   job_id                  STRING NOT NULL OPTIONS (description = 'Unique job id, e.g. JOB_1A2B3C4D'),
   contractor_id           STRING          OPTIONS (description = 'FK -> contractors_master.contractor_id'),
   service_category        STRING          OPTIONS (description = 'Matches the contractor category'),

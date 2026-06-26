@@ -52,6 +52,12 @@ from dateutil.relativedelta import relativedelta  # noqa: E402
 HISTORY_END_DATE = date.today().replace(day=1)
 HISTORY_START_DATE = HISTORY_END_DATE - relativedelta(years=2)
 
+# Future window for SCHEDULED jobs in the job ledger. We generate a forward
+# schedule for this many months AFTER the current month (the month the script
+# runs), so the optimizer can reason about several upcoming months rather than a
+# single fixed one.
+FUTURE_MONTHS = 3
+
 
 # ---------------------------------------------------------------------------
 # LOGGING

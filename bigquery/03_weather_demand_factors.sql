@@ -6,7 +6,7 @@
 -- plumbing demand, which the agent uses alongside capacity to recommend spend.
 -- ============================================================================
 
-CREATE TABLE IF NOT EXISTS `project-e98a17cc-b3c1-4852-95f.northwind_digital_jobs.weather_demand_factors` (
+CREATE TABLE IF NOT EXISTS `YOUR_PROJECT_ID.northwind_digital_jobs.weather_demand_factors` (
   forecast_month                STRING NOT NULL OPTIONS (description = 'YYYY-MM the forecast applies to'),
   region_zip                    STRING          OPTIONS (description = 'Region ZIP code'),
   predicted_dominant_event      STRING          OPTIONS (description = 'e.g. SEVERE_STORMS'),

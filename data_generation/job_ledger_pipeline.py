@@ -16,8 +16,10 @@ Two distinct slices of data per contractor:
    - Each month's volume is 50%-85% of the contractor's capacity, giving the
      optimizer a realistic baseline of demand/throughput.
 
-2. FUTURE jobs (status = SCHEDULED) for the target month 2026-07
-   - Each contractor is randomly flagged as either:
+2. FUTURE jobs (status = SCHEDULED) for the next ``config.FUTURE_MONTHS`` months
+   - One batch for every month AFTER the current month (relative to the run
+     date), so the schedule always extends a few months into the future.
+   - For each (contractor, month) the contractor is randomly flagged as either:
        * HEAVILY booked  -> ~90% of capacity already filled
        * LIGHTLY booked  -> ~30% of capacity already filled
    - This deliberate split is what lets the optimizer decide WHO can absorb more
@@ -84,6 +86,14 @@ def generate(contractors_df: pd.DataFrame) -> pd.DataFrame:
     jobs: list[dict] = []
     history_months = _month_range(config.HISTORY_START_DATE, config.HISTORY_END_DATE)
 
+    # Future window: the next FUTURE_MONTHS months AFTER the current month, computed
+    # relative to the run date so the schedule always extends into the future.
+    first_of_month = date.today().replace(day=1)
+    future_months = [
+        first_of_month + relativedelta(months=i)
+        for i in range(1, config.FUTURE_MONTHS + 1)
+    ]
+
     for _, c in contractors_df.iterrows():
         cont_id = c["contractor_id"]
         category = c["service_category"]
@@ -108,31 +118,36 @@ def generate(contractors_df: pd.DataFrame) -> pd.DataFrame:
                     }
                 )
 
-        # --- 2. Future SCHEDULED jobs for the target month -----------------
-        # Randomly mark this contractor as heavily or lightly booked.
-        heavily_booked = random.choice([True, False])
-        target_usage = 0.90 if heavily_booked else 0.30
-        num_future_jobs = int(max_cap * target_usage)
-        logger.info(
-            "  %s: %s booked for %s (%d/%d capacity).",
-            cont_id,
-            "HEAVILY" if heavily_booked else "LIGHTLY",
-            config.TARGET_MONTH,
-            num_future_jobs,
-            max_cap,
-        )
-        for _ in range(num_future_jobs):
-            booking_date = date(2026, 6, random.randint(1, 23))  # booked during June
-            jobs.append(
-                {
-                    "job_id": _new_job_id(),
-                    "contractor_id": cont_id,
-                    "service_category": category,
-                    "booking_date": booking_date,
-                    "target_completion_month": config.TARGET_MONTH,
-                    "job_status": "SCHEDULED",
-                }
+        # --- 2. Future SCHEDULED jobs for the upcoming months -------------
+        # Generate a forward schedule for each of the next FUTURE_MONTHS. Each
+        # (contractor, month) is independently flagged heavily or lightly booked,
+        # so utilization varies across both contractors and months.
+        for month in future_months:
+            target_month_str = month.strftime("%Y-%m")
+            heavily_booked = random.choice([True, False])
+            target_usage = 0.90 if heavily_booked else 0.30
+            num_future_jobs = int(max_cap * target_usage)
+            logger.info(
+                "  %s: %s booked for %s (%d/%d capacity).",
+                cont_id,
+                "HEAVILY" if heavily_booked else "LIGHTLY",
+                target_month_str,
+                num_future_jobs,
+                max_cap,
             )
+            for _ in range(num_future_jobs):
+                # Booked 1-30 days before the target month begins.
+                booking_date = month - relativedelta(days=random.randint(1, 30))
+                jobs.append(
+                    {
+                        "job_id": _new_job_id(),
+                        "contractor_id": cont_id,
+                        "service_category": category,
+                        "booking_date": booking_date,
+                        "target_completion_month": target_month_str,
+                        "job_status": "SCHEDULED",
+                    }
+                )
 
     df = pd.DataFrame(jobs)
     # Normalise to real date objects so BigQuery maps the column cleanly to DATE.
