@@ -258,9 +258,6 @@ needed — they exercise the pure `generate()` / `build_recommendation()` functi
 Run them from inside `data_generation/` with the same virtualenv from step 4.5
 activated:
 ```bash
-cd data_generation
-source .venv/bin/activate                 # if not already active
-pip install -r requirements.txt           # ensures pytest is installed
 python -m pytest -q
 ```
 > If you see `No module named pytest`, your virtualenv predates pytest being
