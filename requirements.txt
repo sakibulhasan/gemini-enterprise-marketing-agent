@@ -1,0 +1,15 @@
+# Core Google Cloud + Gemini Enterprise (Agentspace) stack
+google-cloud-bigquery>=3.25.0
+google-cloud-storage>=2.18.0
+google-adk>=1.0.0
+google-cloud-aiplatform[adk,agent_engines]>=1.95.0
+
+# Synthetic data generation
+Faker>=30.0.0
+numpy>=1.26.0
+pandas>=2.2.0
+
+# Weather tool (live API) + utilities
+requests>=2.32.0
+python-dotenv>=1.0.1
+PyYAML>=6.0.2
