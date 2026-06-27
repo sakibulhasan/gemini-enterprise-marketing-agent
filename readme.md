@@ -275,52 +275,238 @@ the ad-recommendation target months and document shape.
 After Section 4 has provisioned the infra and loaded the data, connect it to a
 Gemini Enterprise agent.
 
-### Step 0 — One-time prerequisites
-1. Enable these APIs in the Cloud Console:
-   - **Gemini Enterprise / Discovery Engine API** (`discoveryengine.googleapis.com`)
-   - **BigQuery API**, **Cloud Storage API**
-2. Grant your user:
-   - `roles/discoveryengine.admin`
-   - `roles/bigquery.dataViewer` on `northwind_digital_jobs`
-   - `roles/storage.objectViewer` on the bucket
-3. Open the **Gemini Enterprise / AI Applications** console:
-   `https://console.cloud.google.com/gen-app-builder`
+### Step 0 — One-time prerequisites (Web Console)
+
+> Throughout this section, use the **search box at the top of the Cloud Console**
+> (the bar labelled *"Search (/) for resources, docs, products, and more"*). Type
+> the product/page name, then pick the matching result — no need to memorize URLs.
+
+**0.1 Select your project**
+1. Open the Cloud Console at `console.cloud.google.com` and sign in.
+2. In the **top blue bar**, click the project picker and select **your** project
+   (the same one used in Section 4). Confirm its name shows in the bar.
+
+**0.2 Enable the required APIs**
+Gemini Enterprise is built on the **Discovery Engine API** — so yes, you need it,
+along with BigQuery and Cloud Storage. Enable each one from its API page:
+1. Click the **top search box**, type **`Discovery Engine API`**, and select the
+   result under *Marketplace / APIs*. On its page, make sure your project is
+   selected and click **Enable**.
+2. Repeat: search **`BigQuery API`** → open the result → **Enable**.
+3. Repeat: search **`Cloud Storage API`** → open the result → **Enable**.
+
+> Tip: if you click **Activate** on the Gemini Enterprise landing page (next step),
+> the console enables the Discovery Engine API for you automatically — but checking
+> the page above confirms it is on.
+
+**0.3 Open / activate Gemini Enterprise**
+1. Click the **top search box** and type **`Gemini Enterprise`** (it may also appear
+   as **`AI Applications`** or **`Agent Builder`** — they are the same product).
+   Select the matching result.
+2. Confirm the project selector in the top bar shows **your** project.
+3. If prompted, click **Activate** / **Continue** and accept the terms of service.
+   This is a one-time activation per project.
+
+**0.4 Grant yourself the needed IAM roles**
+1. In the **top search box**, type **`IAM`** and select **IAM** (under *IAM & Admin*).
+2. Find your own user (the email you logged in with) and click the **pencil
+   (Edit principal)** icon on that row.
+3. Click **＋ ADD ANOTHER ROLE** and add each of these (one per role):
+   - **Discovery Engine Admin** (`roles/discoveryengine.admin`) — create data
+     stores + agents.
+   - **BigQuery Data Viewer** (`roles/bigquery.dataViewer`) — read the tables.
+   - **Storage Object Viewer** (`roles/storage.objectViewer`) — read the GCS JSON.
+4. Click **Save**.
+
+> If you are the project **Owner**, you already have these permissions and can
+> skip 0.4 — but adding them explicitly is harmless.
+
+**0.5 Verify you're ready**
+1. In the **top search box**, type **`Enabled APIs`** and select
+   **Enabled APIs & services** (under *APIs & Services*).
+2. Confirm **Discovery Engine API**, **BigQuery API**, and **Cloud Storage API**
+   all appear in the list. Now continue to Step 1.
 
 ### Step 1 — BigQuery data stores (structured)
-1. **Data Stores → Create Data Store → BigQuery.**
-2. Select table `project-e98a17cc-b3c1-4852-95f.northwind_digital_jobs.contractors_master`,
-   data type **Structured**, name it `ds-contractors`, **Create**.
-3. Repeat for `job_ledger` (`ds-job-ledger`) and `weather_demand_factors`
-   (`ds-weather`).
+
+You will create **one data store per BigQuery table** (three in total). The
+*Create data store* wizard has four steps shown on the left:
+**Source → Data → Schema → Configuration**. Repeat the whole flow for each table.
+
+**1.1 Source — start a new data store and pick BigQuery**
+1. In the left nav of the Gemini Enterprise console, click **Data stores**.
+2. Click **＋ CREATE DATA STORE**.
+3. On the **Source** step, choose **BigQuery**.
+
+**1.2 Data — choose the import type, frequency, and table**
+On the **Import data from BigQuery** screen:
+4. **What kind of data are you importing?** → under *Structured Data Import*,
+   select **BigQuery table with your own schema** (the schema is auto-detected).
+5. **Synchronization frequency** → leave **One time** for the POC.
+6. **Select a table you want to import** → in the **BigQuery path** field click
+   **Browse** (or type it directly using the format `projectId.datasetId.tableId`):
+   `YOUR_PROJECT_ID.northwind_digital_jobs.contractors_master`.
+7. Click **Continue**.
+
+**1.3 Schema — confirm the auto-detected fields**
+8. Review the auto-detected columns (no changes needed for the POC) and click
+   **Continue**.
+
+**1.4 Configuration — name and create**
+9. Enter the **Data store name**: `ds-contractors`.
+10. Click **Create**. (Row indexing runs in the background — you don't have to wait
+    before creating the next one.)
+
+**1.5 Repeat for the other two tables**
+- `job_ledger` → data store name **`ds-job-ledger`**
+- `weather_demand_factors` → data store name **`ds-weather`**
+
+When done you should have three structured data stores: `ds-contractors`,
+`ds-job-ledger`, `ds-weather`.
 
 ### Step 2 — Cloud Storage data store (unstructured JSON)
-1. **Create Data Store → Cloud Storage.**
-2. Prefix: `gs://northwind-digital-adsense/ad_recommendations/`.
-3. Import as **Unstructured documents**, name it `ds-ad-recommendations`, **Create**.
-4. Wait until status is **Active** (JSON indexing can take a few minutes).
 
-### Step 3 — Create the agent
-1. **Apps → Create App → Agent** (conversational).
-2. Attach all four data stores (`ds-contractors`, `ds-job-ledger`, `ds-weather`,
-   `ds-ad-recommendations`).
-3. Name it **"Ad Budget Optimizer Assistant"**, pick a region, **Create**.
+The ad-recommendation JSON files are imported as **unstructured documents**. This
+wizard has three steps: **Source → Data → Configuration**.
 
-### Step 4 — Agent instructions
-In **Configuration → Instructions**, paste:
+**2.1 Source — start a new data store and pick Cloud Storage**
+1. In the left nav, click **Data stores**, then **＋ CREATE DATA STORE**.
+2. On the **Source** step, choose **Cloud Storage**.
 
-> You help Northwind Digital analysts decide whether to approve Google Ads budget
-> increases for home-services contractors. Before recommending approval, check
-> capacity and load: use `contractors_master` for `max_monthly_capacity`,
-> `job_ledger` for bookings (`target_completion_month = '2026-07'`,
-> `job_status = 'SCHEDULED'`), and `weather_demand_factors` for the category demand
-> multiplier. Compute utilization = scheduled jobs ÷ max_monthly_capacity.
-> Recommend APPROVING/raising budget only when utilization is well below 1.0 AND
-> the category's demand multiplier is high. If the contractor is near capacity,
-> advise HOLDING the budget because extra leads cannot be serviced. Reference the
-> matching GCS ad recommendation document when discussing a pending change.
+**2.2 Data — choose the import type, frequency, and path**
+On the **Import data from Cloud Storage** screen:
+3. **What kind of data are you importing?** → under *Unstructured Data Import
+   (Document Search & RAG)*, select **Documents** (handles JSON/PDF/HTML/TXT, etc.).
+4. **Synchronization frequency** → leave **One time** for the POC.
+5. **Select a folder or a file you want to import** → keep the **Folder** toggle,
+   then in the `gs://` field click **Browse** (or type it) and point at:
+   `gs://YOUR_BUCKET_NAME/ad_recommendations/`
+   (all files under it are imported recursively).
+6. Click **Continue**.
 
-### Step 5 — Publish
-Open **Preview / Integration**, enable the web preview, and start chatting.
+**2.3 Configuration — name and create**
+7. Enter the **Data store name**: `ds-ad-recommendations`.
+8. Click **Create**.
+9. Wait until its status shows **Active** — JSON indexing can take a few minutes.
+
+### Step 3 — Create the agent (App)
+
+**3.1 Start a new app**
+1. In the left nav, click **Apps**, then **＋ CREATE APP** (this opens the
+   **Create** form directly — no app-type prompt).
+
+**3.2 Choose a display name**
+2. **App name** → enter `Ad Budget Optimizer Assistant`.
+3. Note the auto-generated **ID** shown beneath the name — it **cannot be changed
+   later** (use **Edit** now if you want a custom id).
+
+**3.3 Choose a location**
+4. **Multi-region** → leave **global (Global)** (recommended unless you have a
+   compliance reason to pin a region — this also can't be changed later).
+
+**3.4 Advanced options (optional)**
+5. Expand **Advanced options** if you want to set them — both are optional for the POC:
+   - **Provide the external name of your company** → e.g. `Northwind Digital`
+     (helps the model give higher-quality responses).
+   - **Include cross-domain documents** → leave **unchecked** (only relevant for
+     Google Drive connectors outside your organization).
+
+**3.5 Create the app**
+6. Click **Create**. You'll see **"App created successfully"** and land on the
+   app's **Overview** page (left nav: *Overview, Connected data stores, Actions,
+   Prompt chips, Configurations, Agents, Security, Integration*).
+
+**3.6 Attach the four data stores**
+7. In the app's left nav, click **Connected data stores**. (It starts empty —
+   *"No data stores are connected to this Gemini Enterprise app yet."*)
+8. Click **🔗 Add existing data stores** (use this since you already created them in
+   Steps 1–2; **＋ New data store** is only for creating a brand-new one here).
+9. Select **all four** — `ds-contractors`, `ds-job-ledger`, `ds-weather`,
+   `ds-ad-recommendations` — and confirm.
+10. They now appear in the list with their **Type**, **Status**, and sync columns.
+
+### Step 4 — Assistant behavior & instructions
+
+With the four data stores connected (Step 3), the built-in **Core Assistant**
+already grounds its answers on them — you don't have to "wire up" anything for it
+to read your tables and JSON. What's left is to (optionally) give it guidance and
+verify it works.
+
+> Heads-up: clicking **Agents → Core Assistant** opens a **read-only registry
+> page** (Display name, Description, SPIFFE ID, tabs *Details / Traces / Metrics /
+> Observability*). There is **no instructions field** there — that page is just
+> metadata. Assistant behavior is configured under **Configurations**, below.
+
+**4.1 Open the assistant configuration**
+1. In the app's left sidebar, click **Configurations**. It opens on the
+   **Search UI** tab by default (tabs across the top: *Autocomplete, Search UI,
+   Control, **Assistant**, Knowledge Graph, Feature Management, Observability*).
+2. Click the **Assistant** tab.
+
+**4.2 Add the system instructions**
+3. On the **Assistant** tab you'll see **Gemini Enterprise-only settings** with
+   an **Additional LLM system instructions** section.
+4. Select **Customize** (instead of *Use default*). A text field appears.
+5. Paste the instructions below into it:
+
+   > You help Northwind Digital analysts decide whether to approve Google Ads
+   > budget increases for home-services contractors. Before recommending approval,
+   > check capacity and load: use `contractors_master` for `max_monthly_capacity`,
+   > `job_ledger` for bookings (`target_completion_month` = the month being asked
+   > about, `job_status = 'SCHEDULED'`), and `weather_demand_factors` for the
+   > category demand multiplier. Compute utilization = scheduled jobs ÷
+   > max_monthly_capacity. Recommend APPROVING/raising budget only when utilization
+   > is well below 1.0 AND the category's demand multiplier is high. If the
+   > contractor is near capacity, advise HOLDING the budget because extra leads
+   > cannot be serviced. Reference the matching GCS ad recommendation document when
+   > discussing a pending change.
+
+**4.3 Review the other settings on this page**
+   - **Enable web grounding** — optionally turn this **off** so the assistant only
+     answers from your connected data stores rather than the public web.
+   - **Default Web Search State**, **Enable location context**, **Enable Model
+     Armor**, **Banned phrases**, **Chat history retention period** — leave at
+     defaults for the POC.
+
+**4.4 Save**
+6. Click **Save and publish** at the bottom of the page.
+
+### Step 5 — Test the assistant
+
+The **Test config** chat panel is available on the right side of the
+**Configurations → Search UI** tab. No identity provider or web-app publishing
+is needed to use it.
+
+> **Note on the Identity provider / Integration page:** Clicking **Integration**
+> prompts you to choose an identity provider. If you see the error *"Project's GCP
+> Organization is not associated with a Cloud Identity customer id"*, your GCP
+> project was created with a personal account that is not under a Google Workspace
+> org. This only blocks web-app publishing — it does **not** affect the Test
+> config panel below. Skip Integration for now and use the steps below to validate
+> the assistant.
+
+**5.1 Open the Test config panel**
+1. In the app's left sidebar, click **Configurations**.
+2. Make sure the **Search UI** tab is selected (it's the default). The
+   **Test config** panel appears on the right half of the page, showing
+   *"Hello, gemini — Let's get some work done!"* with an input box labelled
+   *"Ask anything, search your data, @mention or /tools"*.
+
+**5.2 Run a grounding check**
+3. In the **Test config** input box, type the question below and press **Enter**:
+
+   > *What is the max monthly capacity of CONT_ROOFING_01?*
+
+4. If the assistant returns a value sourced from `contractors_master`, your data
+   stores are connected correctly. Move on to Section 6 for the full test suite.
+
+**5.3 (Optional) Publish as a web app**
+If your GCP project is under a Google Workspace / Cloud Identity organization:
+1. In the left sidebar, click **Integration**.
+2. Select **Use Google Identity** and click **Confirm Workforce Identity**.
+3. On the Integration page, find the **Web app** section → **Enable** / **Create**.
+4. Set the access policy (restrict to your org or allow public), click
+   **Save and publish**, and copy the shareable URL.
 
 ---
 
